@@ -7,6 +7,7 @@
  */
 package org.geofuse.controller;
 
+import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.OutputStreamWriter;
@@ -23,6 +24,7 @@ import javax.servlet.http.HttpSession;
 
 import org.apache.commons.beanutils.BeanUtils;
 import org.geofuse.bean.WmsParamBean;
+import org.geofuse.pdf.GeneratePdf;
 import org.geofuse.sld.GenerateSLD;
 import org.geofuse.util.ConfigProperties;
 import org.slf4j.Logger;
@@ -56,8 +58,11 @@ public class CoreController {
 
     private String geoserverURL = new String();
     private String[] colorNames = {};
-    private String[] colorVals = {};
-    
+    private String[] colorVals  = {};
+
+    private String pdfURL       = new String();
+    private String pdfLayers    = new String();
+
     private Map<String, String[]> colorMap = new HashMap<String, String[]>();
 
     /**
@@ -70,9 +75,12 @@ public class CoreController {
     @PostConstruct
     public void init() {
         geoserverURL = configProp.getConfigValue("GEOSERVER.BASE.URL");
-        colorNames = configProp.getConfigValue("THEMATIC.COLOR.NAMES").split(",");
-        colorVals = configProp.getConfigValue("THEMATIC.COLORS").split(",");
-         
+        colorNames   = configProp.getConfigValue("THEMATIC.COLOR.NAMES").split(",");
+        colorVals    = configProp.getConfigValue("THEMATIC.COLORS").split(",");
+
+        this.pdfURL    = configProp.getConfigValue("PDF.OSM.URL");
+        this.pdfLayers = configProp.getConfigValue("PDF.OSM.LAYERS");
+
         if (colorNames.length == colorVals.length) {
             for (int i = 0; i < colorNames.length; i++) {
                 try {
@@ -87,7 +95,9 @@ public class CoreController {
         logger.info("*** Core PostConstruct *** " + this.geoserverURL);
     }
 
-    @Operation(summary = "Generate Dynamic SLD for Thematic Maps.")
+    @Operation(summary = "Generate Dynamic SLD for Thematic Maps."
+            + " The created SLD will be returned and saved into the"
+            + " session state at the same time.")
     @RequestMapping(value = "/generateSld", method = { RequestMethod.GET }, produces = { MediaType.APPLICATION_XML_VALUE })
     public String generateSld(
             @Parameter(allowEmptyValue = false, description = "Name of pre-defined WMS/WFS Layer to be used i.e. geofuse:geolink") @RequestParam(defaultValue = "geofuse:geolink",required = true) String typename,
@@ -101,10 +111,10 @@ public class CoreController {
             @Parameter(allowEmptyValue = false, description = "Number of Thematic Ranges to Create", example = "6") @RequestParam(value="numrange",required = false, defaultValue="6") int numrange,
             HttpServletRequest req,
             HttpServletResponse res
-    ) {
-        
+            ) {
+
         gsld.initColorMap();
-        
+
         gsld.setTypeName(typename);
         gsld.setPropName(propname);
         gsld.setColor(color);
@@ -114,19 +124,22 @@ public class CoreController {
         gsld.setCqlString(cql);
         gsld.setViewParams(viewparmas);
         gsld.setNumRange(numrange);
-        
+
         String sld = gsld.getSLD();
-        
-     // ************************************
-     // * Writing to Session
-     // ************************************
+
+        // ************************************
+        // * Writing to Session
+        // ************************************
         HttpSession session = req.getSession();
         session.setAttribute(typename, sld);
-        
+
         return sld;
     }
 
-    @Operation(summary = "WMS Proxy Service. Accepts GeoServer WMS Parameter Requests.")
+    @Operation(summary = "WMS Proxy Service. Accepts GeoServer WMS Parameter Requests."
+            + " This will read and use a saved SLD if exists in the Session State."
+            + " This will also produce a PDF Map document with a customized REQUEST=GetPDFGraphic"
+            + " wms request.")
     @RequestMapping(value = "/wms", method = { RequestMethod.POST, RequestMethod.GET })
     public void wmsProxy(HttpServletRequest req,
             HttpServletResponse res) throws Exception {
@@ -172,26 +185,46 @@ public class CoreController {
                     wmsBean.setSTYLES("");
                 }
             }
-            /**
-             * Generating Map from GeoServer
-             **/
-            URL geoURL = new URL(this.geoserverURL + "/wms");
 
-            URLConnection geoConn = geoURL.openConnection();
-            geoConn.setDoOutput(true);
+            if( wmsBean.getREQUEST().compareToIgnoreCase("GetPDFGraphic") == 0 ) {
+                /**
+                 * Generate PDF Request
+                 */
+                GeneratePdf pdf = new GeneratePdf(this.pdfURL,
+                        this.pdfLayers);
 
-            wr = new OutputStreamWriter(geoConn.getOutputStream(), "UTF-8");
-            wr.write(wmsBean.getURL_PARAM());
-            wr.flush();
+                ByteArrayOutputStream baos = pdf.createPDFFromImage(
+                        wmsBean, this.geoserverURL+ "/wms");
 
-            in = geoConn.getInputStream();
-            out = res.getOutputStream();
+                res.addHeader("Content-Type", "application/force-download"); 
+                res.addHeader("Content-Disposition", 
+                        "attachment; filename=\"MapOutput.pdf\"");
 
-            res.setContentType(wmsBean.getFORMAT());
+                res.getOutputStream().write(baos.toByteArray());
+            }
+            else {
 
-            int b;
-            while ((b = in.read()) != -1) {
-                out.write(b);
+                /**
+                 * Generating Map from GeoServer
+                 **/
+                URL geoURL = new URL(this.geoserverURL + "/wms");
+
+                URLConnection geoConn = geoURL.openConnection();
+                geoConn.setDoOutput(true);
+
+                wr = new OutputStreamWriter(geoConn.getOutputStream(), "UTF-8");
+                wr.write(wmsBean.getURL_PARAM());
+                wr.flush();
+
+                in = geoConn.getInputStream();
+                out = res.getOutputStream();
+
+                res.setContentType(wmsBean.getFORMAT());
+
+                int b;
+                while ((b = in.read()) != -1) {
+                    out.write(b);
+                }
             }
 
         } catch (Exception e) {
