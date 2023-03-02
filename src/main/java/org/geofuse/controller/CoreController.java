@@ -97,7 +97,9 @@ public class CoreController {
 
     @Operation(summary = "Generate Dynamic SLD for Thematic Maps."
             + " The created SLD will be returned and saved into the"
-            + " session state at the same time.")
+            + " session state at the same time. The returned JSESSIONID"
+            + " cookie parameter has to be passed into the proxy wms request"
+            + " to access the session saved SLD. ")
     @RequestMapping(value = "/generateSld", method = { RequestMethod.GET }, produces = { MediaType.APPLICATION_XML_VALUE })
     public String generateSld(
             @Parameter(allowEmptyValue = false, description = "Name of pre-defined WMS/WFS Layer to be used i.e. geofuse:geolink") @RequestParam(defaultValue = "geofuse:geolink",required = true) String typename,
@@ -139,7 +141,7 @@ public class CoreController {
     @Operation(summary = "WMS Proxy Service. Accepts GeoServer WMS Parameter Requests."
             + " This will read and use a saved SLD if exists in the Session State."
             + " This will also produce a PDF Map document with a customized REQUEST=GetPDFGraphic"
-            + " wms request.")
+            + " wms request with the added PDF_TITLE and PDF_REQUEST parameters.")
     @RequestMapping(value = "/wms", method = { RequestMethod.POST, RequestMethod.GET })
     public void wmsProxy(HttpServletRequest req,
             HttpServletResponse res) throws Exception {
