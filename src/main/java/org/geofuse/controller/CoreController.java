@@ -141,7 +141,7 @@ public class CoreController {
     @Operation(summary = "WMS Proxy Service. Accepts GeoServer WMS Parameter Requests."
             + " This will read and use a saved SLD if exists in the Session State."
             + " This will also produce a PDF Map document with a customized REQUEST=GetPDFGraphic"
-            + " wms request with the added PDF_TITLE and PDF_REQUEST parameters.")
+            + " wms request with the added PDF_TITLE and PDF_NOTE parameters.")
     @RequestMapping(value = "/wms", method = { RequestMethod.POST, RequestMethod.GET })
     public void wmsProxy(HttpServletRequest req,
             HttpServletResponse res) throws Exception {
